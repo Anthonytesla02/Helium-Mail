@@ -1,0 +1,6 @@
+{
+  "name": "Verve Mail",
+  "description": "Mobile-first multi-account email client supporting 10+ Gmail, Outlook, Yahoo, iCloud, and custom IMAP/SMTP inboxes.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

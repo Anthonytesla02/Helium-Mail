@@ -23,10 +23,14 @@ workflows:
     scripts:
       - name: Install npm dependencies
         script: |
-          npm ci
+          if [ -f package-lock.json ]; then
+            npm ci --legacy-peer-deps
+          else
+            npm install --legacy-peer-deps --no-audit --no-fund
+          fi
       - name: Run pure logic unit tests
         script: |
-          npx --yes tsx --test src/lib/mailLogic.test.ts src/lib/localMailboxEngine.test.ts
+          npx tsx --test src/lib/mailLogic.test.ts src/lib/localMailboxEngine.test.ts
       - name: Build Helium Mail web bundle
         script: |
           npm run build
@@ -35,7 +39,8 @@ workflows:
           npx cap sync android
       - name: Configure Android SDK local.properties
         script: |
-          echo "sdk.dir=$ANDROID_SDK_ROOT" > "$CM_BUILD_DIR/android/local.properties"
+          SDK_DIR="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          echo "sdk.dir=$SDK_DIR" > "$CM_BUILD_DIR/android/local.properties"
       - name: Build Android Debug APK
         script: |
           cd android
@@ -66,10 +71,14 @@ workflows:
     scripts:
       - name: Install npm dependencies
         script: |
-          npm ci
+          if [ -f package-lock.json ]; then
+            npm ci --legacy-peer-deps
+          else
+            npm install --legacy-peer-deps --no-audit --no-fund
+          fi
       - name: Run pure logic unit tests
         script: |
-          npx --yes tsx --test src/lib/mailLogic.test.ts src/lib/localMailboxEngine.test.ts
+          npx tsx --test src/lib/mailLogic.test.ts src/lib/localMailboxEngine.test.ts
       - name: Build Helium Mail web bundle
         script: |
           npm run build
@@ -78,7 +87,8 @@ workflows:
           npx cap sync android
       - name: Configure Android SDK and release keystore
         script: |
-          echo "sdk.dir=$ANDROID_SDK_ROOT" > "$CM_BUILD_DIR/android/local.properties"
+          SDK_DIR="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          echo "sdk.dir=$SDK_DIR" > "$CM_BUILD_DIR/android/local.properties"
           echo "$FCI_KEYSTORE" | base64 --decode > /tmp/helium-release.keystore
           cat > "$CM_BUILD_DIR/android/key.properties" <<EOF
           storePassword=$FCI_KEYSTORE_PASSWORD
@@ -123,10 +133,14 @@ workflows:
     scripts:
       - name: Install npm dependencies
         script: |
-          npm ci
+          if [ -f package-lock.json ]; then
+            npm ci --legacy-peer-deps
+          else
+            npm install --legacy-peer-deps --no-audit --no-fund
+          fi
       - name: Run pure logic unit tests
         script: |
-          npx --yes tsx --test src/lib/mailLogic.test.ts src/lib/localMailboxEngine.test.ts
+          npx tsx --test src/lib/mailLogic.test.ts src/lib/localMailboxEngine.test.ts
       - name: Build Helium Mail web bundle
         script: |
           npm run build

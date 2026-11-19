@@ -7,7 +7,7 @@ const config: CapacitorConfig = {
   server: {
     androidScheme: 'https',
     iosScheme: 'capacitor',
-    allowNavigation: ['accounts.google.com', '*.googleapis.com', '*.firebaseapp.com'],
+    allowNavigation: ['accounts.google.com', '*.googleapis.com', '*.firebaseapp.com', '*.run.app'],
   },
   plugins: {
     StatusBar: {

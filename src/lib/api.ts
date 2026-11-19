@@ -13,6 +13,8 @@ import { isNativeApp } from './nativeBridge';
 import { createSnippet } from './mailLogic';
 
 const API_BASE_STORAGE_KEY = 'helium_api_base_url';
+const DEFAULT_NATIVE_API_BASE_URL =
+  'https://ais-pre-bypfs6wswo3z2s72ynsqyi-68265783693.europe-west2.run.app';
 
 export function getConfiguredApiBaseUrl(): string {
   if (typeof window !== 'undefined' && window.localStorage) {
@@ -20,7 +22,8 @@ export function getConfiguredApiBaseUrl(): string {
     if (custom) return custom.replace(/\/+$/, '');
   }
   const envUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim();
-  return envUrl ? envUrl.replace(/\/+$/, '') : '';
+  if (envUrl) return envUrl.replace(/\/+$/, '');
+  return isNativeApp() ? DEFAULT_NATIVE_API_BASE_URL : '';
 }
 
 export function setConfiguredApiBaseUrl(url: string): void {
@@ -64,8 +67,8 @@ async function jsonFetch<T>(
     const data = isJson ? await res.json().catch(() => ({})) : {};
 
     if (!res.ok) {
-      // On native builds without a reachable backend, 404/non-JSON means fall back to on-device store
-      if (isNativeApp() && !isJson && localFallback) {
+      // On native builds, if backend is gated (401/403) or returns non-JSON HTML, fall back to on-device store
+      if (isNativeApp() && (!isJson || res.status === 401 || res.status === 403) && localFallback) {
         return localFallback();
       }
       const err: any = new Error(data.error || `Request failed (${res.status})`);

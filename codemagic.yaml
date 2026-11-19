@@ -6,10 +6,8 @@ workflows:
     environment:
       node: 22
       java: 21
-      vars:
-        # Android builds connect directly to IMAP/SMTP on-device via NativeMailPlugin.
-        # Set this only if you self-host your own public Helium Mail Express backend.
-        VITE_API_BASE_URL: ""
+      # Android builds connect directly to IMAP/SMTP on-device via NativeMailPlugin.
+      # Optionally add vars -> VITE_API_BASE_URL only if self-hosting a public Express backend.
     cache:
       cache_paths:
         - $HOME/.gradle/caches
@@ -63,8 +61,6 @@ workflows:
         - keystore_credentials
         # Optional: create in Codemagic UI with GCLOUD_SERVICE_ACCOUNT_CREDENTIALS JSON
         - google_play
-      vars:
-        VITE_API_BASE_URL: ""
     cache:
       cache_paths:
         - $HOME/.gradle/caches
@@ -126,7 +122,6 @@ workflows:
       vars:
         XCODE_PROJECT: "App.xcodeproj"
         XCODE_SCHEME: "App"
-        VITE_API_BASE_URL: ""
     cache:
       cache_paths:
         - node_modules

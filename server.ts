@@ -136,6 +136,28 @@ async function startServer() {
       (a) => a.email.toLowerCase() === String(body.email).trim().toLowerCase() && a.provider === body.provider
     );
     if (existing) {
+      if (typeof body.label === 'string' && body.label.trim()) existing.label = body.label.trim();
+      if (typeof body.displayName === 'string' && body.displayName.trim()) {
+        existing.displayName = body.displayName.trim();
+      }
+      if (typeof body.color === 'string') existing.color = body.color;
+      if (typeof body.signature === 'string' && body.signature.trim()) {
+        existing.signature = body.signature.trim();
+      }
+      if (body.imapHost) {
+        existing.password = String(body.password || existing.password || '');
+        existing.imapSmtp = {
+          imapHost: String(body.imapHost).trim(),
+          imapPort: Number(body.imapPort || 993),
+          imapSecure: Boolean(body.imapSecure ?? true),
+          smtpHost: String(body.smtpHost || existing.imapSmtp?.smtpHost || '').trim(),
+          smtpPort: Number(body.smtpPort || 465),
+          smtpSecure: Boolean(body.smtpSecure ?? true),
+          username: String(body.email).trim().toLowerCase(),
+          hasPassword: Boolean(existing.password),
+        };
+      }
+      saveDb(db);
       return res.json({ account: sanitizeAccount(existing), state: getSanitizedState(), reused: true });
     }
 

@@ -23,6 +23,7 @@ import type {
   SwipeAction,
 } from './types/mail';
 import {
+  ACCOUNT_COLOR_PALETTE,
   computeAccountUnreadCounts,
   filterMessages,
   getInitialLetter,
@@ -30,6 +31,7 @@ import {
 } from './lib/mailLogic';
 import {
   bulkMessageAction,
+  createAccount,
   createLabel,
   deleteAccount,
   fetchMailboxState,
@@ -128,9 +130,42 @@ export default function App() {
 
   useEffect(() => {
     reloadState();
-    const unsub = initGmailAuth();
+    const unsub = initGmailAuth(async (user, emailsWithTokens) => {
+      const email = (user?.email || '').toLowerCase();
+      if (!email || !emailsWithTokens.includes(email)) return;
+      try {
+        const latest = await fetchMailboxState();
+        const exists = latest.accounts.find(
+          (a) => a.email.toLowerCase() === email && a.provider === 'gmail-oauth'
+        );
+        if (exists) {
+          await syncAccountMessages(exists);
+          await reloadState();
+          return;
+        }
+        const displayName = user?.displayName || email.split('@')[0];
+        const { account } = await createAccount({
+          label: displayName.split(' ')[0] || 'Gmail',
+          email,
+          displayName,
+          provider: 'gmail-oauth',
+          color: ACCOUNT_COLOR_PALETTE[latest.accounts.length % ACCOUNT_COLOR_PALETTE.length],
+          signature: `Best,\n${displayName}`,
+        });
+        const syncRes = await syncAccountMessages(account);
+        await reloadState();
+        showToast({
+          message:
+            syncRes.syncedCount > 0
+              ? `Connected ${email} · synced ${syncRes.syncedCount} emails`
+              : `Connected ${email}`,
+        });
+      } catch (err: any) {
+        setErrorBanner(err?.message || `Connected ${email}, but initial Gmail sync failed.`);
+      }
+    });
     return () => unsub();
-  }, [reloadState]);
+  }, [reloadState, showToast]);
 
   useEffect(() => {
     if (!state) return;
@@ -506,18 +541,28 @@ export default function App() {
   const handleSyncAll = async () => {
     if (!state) return;
     setSyncingAll(true);
+    setErrorBanner(null);
     let totalNew = 0;
+    const syncErrors: string[] = [];
     try {
       for (const acct of state.accounts) {
         if (acct.provider === 'gmail-oauth' || acct.imapSmtp) {
-          const res = await syncAccountMessages(acct).catch(() => null);
-          if (res) totalNew += res.syncedCount;
+          try {
+            const res = await syncAccountMessages(acct);
+            totalNew += res.syncedCount;
+          } catch (err: any) {
+            syncErrors.push(`${acct.label}: ${err?.message || 'Sync failed'}`);
+          }
         }
       }
       await reloadState();
-      showToast({
-        message: totalNew > 0 ? `Synced ${totalNew} new message(s)` : 'All inboxes are up to date',
-      });
+      if (syncErrors.length > 0) {
+        setErrorBanner(syncErrors[0]);
+      } else {
+        showToast({
+          message: totalNew > 0 ? `Synced ${totalNew} new message(s)` : 'All inboxes are up to date',
+        });
+      }
     } finally {
       setSyncingAll(false);
     }
@@ -896,6 +941,23 @@ export default function App() {
                 >
                   Clear filters
                 </button>
+              )}
+              {activeAccount && (activeAccount.imapSmtp || activeAccount.provider === 'gmail-oauth') && (
+                <div className="pt-2 space-y-2">
+                  {activeAccount.syncError && (
+                    <p className="text-xs text-[#BE123C] max-w-xs mx-auto">
+                      {activeAccount.syncError}
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleSyncAll}
+                    disabled={syncingAll}
+                    className="min-h-[40px] px-4 rounded-full bg-[#C85028] text-white text-xs font-semibold disabled:opacity-60"
+                  >
+                    {syncingAll ? 'Syncing...' : `Sync ${activeAccount.label}`}
+                  </button>
+                </div>
               )}
             </div>
           ) : (

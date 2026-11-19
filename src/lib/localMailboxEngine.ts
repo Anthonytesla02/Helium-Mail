@@ -130,6 +130,24 @@ export class LocalMailboxEngine {
       (a) => a.email.toLowerCase() === cleanEmail && a.provider === payload.provider
     );
     if (existing) {
+      if (payload.label?.trim()) existing.label = payload.label.trim();
+      if (payload.displayName?.trim()) existing.displayName = payload.displayName.trim();
+      if (payload.color) existing.color = payload.color;
+      if (payload.signature?.trim()) existing.signature = payload.signature.trim();
+      if (payload.imapHost) {
+        existing.password = payload.password || existing.password || '';
+        existing.imapSmtp = {
+          imapHost: String(payload.imapHost).trim(),
+          imapPort: Number(payload.imapPort || 993),
+          imapSecure: Boolean(payload.imapSecure ?? true),
+          smtpHost: String(payload.smtpHost || existing.imapSmtp?.smtpHost || '').trim(),
+          smtpPort: Number(payload.smtpPort || 465),
+          smtpSecure: Boolean(payload.smtpSecure ?? true),
+          username: cleanEmail,
+          hasPassword: Boolean(existing.password),
+        };
+      }
+      this.saveDb(db);
       return { account: sanitizeAccount(existing), state: this.getState(), reused: true };
     }
 
@@ -190,6 +208,44 @@ export class LocalMailboxEngine {
 
     this.saveDb(db);
     return { account: sanitizeAccount(newAccount), state: this.getState() };
+  }
+
+  getImapCredentials(accountId: string): {
+    email: string;
+    displayName: string;
+    password: string;
+    imapHost: string;
+    imapPort: number;
+    imapSecure: boolean;
+    smtpHost: string;
+    smtpPort: number;
+    smtpSecure: boolean;
+  } | null {
+    const db = this.loadDb();
+    const acct = db.accounts.find((a) => a.id === accountId);
+    if (!acct || !acct.imapSmtp || !acct.password) return null;
+    return {
+      email: acct.imapSmtp.username || acct.email,
+      displayName: acct.displayName,
+      password: acct.password,
+      imapHost: acct.imapSmtp.imapHost,
+      imapPort: acct.imapSmtp.imapPort,
+      imapSecure: acct.imapSmtp.imapSecure,
+      smtpHost: acct.imapSmtp.smtpHost,
+      smtpPort: acct.imapSmtp.smtpPort,
+      smtpSecure: acct.imapSmtp.smtpSecure,
+    };
+  }
+
+  markAccountSyncError(accountId: string, errorMessage: string): MailboxStatePayload {
+    const db = this.loadDb();
+    const acct = db.accounts.find((a) => a.id === accountId);
+    if (acct) {
+      acct.syncStatus = 'error';
+      acct.syncError = errorMessage;
+      this.saveDb(db);
+    }
+    return this.getState();
   }
 
   updateAccount(id: string, patch: Partial<MailAccount>): { account: MailAccount; state: MailboxStatePayload } {

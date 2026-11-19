@@ -10,20 +10,26 @@ import type {
 import { getGmailToken } from './gmailAuth';
 import { localMailboxEngine } from './localMailboxEngine';
 import { isNativeApp } from './nativeBridge';
+import { isNativeMailSupported, NativeMailPlugin } from './nativeMail';
 import { createSnippet } from './mailLogic';
 
 const API_BASE_STORAGE_KEY = 'helium_api_base_url';
-const DEFAULT_NATIVE_API_BASE_URL =
-  'https://ais-pre-bypfs6wswo3z2s72ynsqyi-68265783693.europe-west2.run.app';
+
+function isBrokenPreviewUrl(url: string): boolean {
+  return /^https:\/\/ais-(?:pre|dev)-[^/]+\.run\.app(?:\/|$)/i.test(url.trim());
+}
 
 export function getConfiguredApiBaseUrl(): string {
   if (typeof window !== 'undefined' && window.localStorage) {
     const custom = window.localStorage.getItem(API_BASE_STORAGE_KEY)?.trim();
-    if (custom) return custom.replace(/\/+$/, '');
+    if (custom && !isBrokenPreviewUrl(custom)) return custom.replace(/\/+$/, '');
+  }
+  if (!isNativeApp()) {
+    return '';
   }
   const envUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim();
-  if (envUrl) return envUrl.replace(/\/+$/, '');
-  return isNativeApp() ? DEFAULT_NATIVE_API_BASE_URL : '';
+  if (envUrl && !isBrokenPreviewUrl(envUrl)) return envUrl.replace(/\/+$/, '');
+  return '';
 }
 
 export function setConfiguredApiBaseUrl(url: string): void {
@@ -67,8 +73,12 @@ async function jsonFetch<T>(
     const data = isJson ? await res.json().catch(() => ({})) : {};
 
     if (!res.ok) {
-      // On native builds, if backend is gated (401/403) or returns non-JSON HTML, fall back to on-device store
-      if (isNativeApp() && (!isJson || res.status === 401 || res.status === 403) && localFallback) {
+      // On native builds, if backend is gated/unreachable (401/403/404) or returns HTML, use local/native fallback
+      if (
+        isNativeApp() &&
+        (!isJson || res.status === 401 || res.status === 403 || res.status === 404) &&
+        localFallback
+      ) {
         return localFallback();
       }
       const err: any = new Error(data.error || `Request failed (${res.status})`);
@@ -261,6 +271,45 @@ export async function deleteAccount(id: string): Promise<{ state: MailboxStatePa
   );
 }
 
+async function syncImapDirectNative(
+  account: MailAccount
+): Promise<{ syncedCount: number; state: MailboxStatePayload }> {
+  const creds = localMailboxEngine.getImapCredentials(account.id);
+  if (!creds) {
+    const msg = 'IMAP credentials are not saved on this device. Remove and re-add the account with your password.';
+    localMailboxEngine.markAccountSyncError(account.id, msg);
+    throw new Error(msg);
+  }
+
+  try {
+    const beforeRemoteIds = new Set(
+      localMailboxEngine
+        .getState()
+        .messages.map((m) => m.remoteId)
+        .filter(Boolean)
+    );
+    const { messages } = await NativeMailPlugin.syncImap({
+      accountId: account.id,
+      email: creds.email,
+      displayName: creds.displayName,
+      password: creds.password,
+      imapHost: creds.imapHost,
+      imapPort: creds.imapPort,
+      imapSecure: creds.imapSecure,
+      limit: 20,
+    });
+    const newCount = (messages || []).filter(
+      (m) => !m.remoteId || !beforeRemoteIds.has(m.remoteId)
+    ).length;
+    const state = localMailboxEngine.upsertSyncedMessages(account.id, messages || []);
+    return { syncedCount: newCount, state };
+  } catch (err: any) {
+    const message = err?.message || 'Unable to sync IMAP mailbox.';
+    localMailboxEngine.markAccountSyncError(account.id, message);
+    throw new Error(message);
+  }
+}
+
 export async function testImapConnection(payload: {
   email: string;
   password: string;
@@ -272,14 +321,21 @@ export async function testImapConnection(payload: {
   smtpSecure: boolean;
 }): Promise<{ ok: boolean; message: string }> {
   if (shouldUseStandaloneLocalOnly()) {
+    if (isNativeMailSupported()) {
+      return NativeMailPlugin.testConnection(payload);
+    }
     throw new Error(
-      'Set a Sync Server URL in Settings & rules (or build with VITE_API_BASE_URL) to verify live IMAP/SMTP servers from the mobile app.'
+      'Direct IMAP/SMTP testing is available on Android or when a Sync Server URL is configured in Settings & rules.'
     );
   }
-  return jsonFetch('/api/imap/test', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
+  return jsonFetch(
+    '/api/imap/test',
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    },
+    isNativeMailSupported() ? () => NativeMailPlugin.testConnection(payload) : undefined
+  );
 }
 
 export async function syncAccountMessages(
@@ -306,13 +362,18 @@ export async function syncAccountMessages(
 
   if (account.imapSmtp) {
     if (shouldUseStandaloneLocalOnly()) {
+      if (isNativeMailSupported()) {
+        return syncImapDirectNative(account);
+      }
       throw new Error(
-        'IMAP sync requires a Sync Server URL in Settings & rules when running standalone.'
+        'IMAP sync requires Android native mode or a Sync Server URL in Settings & rules.'
       );
     }
-    return jsonFetch(`/api/imap/sync/${account.id}`, {
-      method: 'POST',
-    });
+    return jsonFetch(
+      `/api/imap/sync/${account.id}`,
+      { method: 'POST' },
+      isNativeMailSupported() ? () => syncImapDirectNative(account) : undefined
+    );
   }
 
   const state = await fetchMailboxState();
@@ -332,7 +393,10 @@ export async function sendMailMessage(
       body: JSON.stringify(draft),
     },
     async () => {
-      if (token && senderEmail) {
+      const isScheduled = Boolean(
+        draft.scheduledFor && new Date(draft.scheduledFor).getTime() > Date.now() + 5000
+      );
+      if (!isScheduled && token && senderEmail) {
         const mime = [
           `From: ${senderEmail}`,
           `To: ${draft.to}`,
@@ -344,14 +408,34 @@ export async function sendMailMessage(
         ]
           .filter(Boolean)
           .join('\r\n');
-        await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+        const gmailRes = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${token}`,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({ raw: encodeBase64UrlBrowser(mime) }),
-        }).catch(() => {});
+        });
+        if (!gmailRes.ok) {
+          throw new Error(`Gmail API send failed (${gmailRes.status}). Try signing in again.`);
+        }
+      } else if (!isScheduled && isNativeMailSupported()) {
+        const creds = localMailboxEngine.getImapCredentials(draft.accountId);
+        if (creds) {
+          await NativeMailPlugin.sendSmtp({
+            email: creds.email,
+            displayName: creds.displayName,
+            password: creds.password,
+            smtpHost: creds.smtpHost,
+            smtpPort: creds.smtpPort,
+            smtpSecure: creds.smtpSecure,
+            to: draft.to,
+            cc: draft.cc,
+            bcc: draft.bcc,
+            subject: draft.subject,
+            bodyText: draft.bodyText,
+          });
+        }
       }
       return localMailboxEngine.sendMessage(draft);
     }

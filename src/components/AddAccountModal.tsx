@@ -81,6 +81,7 @@ export function AddAccountModal({
   const handleGoogleOAuth = async () => {
     setBusy(true);
     setErrorBanner(null);
+    setStatusMessage(null);
     try {
       const gmail = await connectGmailWithGoogle();
       const chosenLabel = label.trim() || gmail.displayName.split(' ')[0] || 'Gmail';
@@ -92,8 +93,14 @@ export function AddAccountModal({
         color,
         signature: signature.trim() || `Best,\n${gmail.displayName}`,
       });
-      await syncAccountMessages(account).catch(() => null);
-      onAdded(account, `Connected ${gmail.email} via Google Sign-In`);
+      let syncNotice = '';
+      try {
+        const syncRes = await syncAccountMessages(account);
+        syncNotice = syncRes.syncedCount > 0 ? ` · imported ${syncRes.syncedCount} emails` : '';
+      } catch (syncErr: any) {
+        syncNotice = ` · ${syncErr?.message || 'initial sync skipped'}`;
+      }
+      onAdded(account, `Connected ${gmail.email} via Google Sign-In${syncNotice}`);
       onClose();
     } catch (err: any) {
       const msg = String(err?.message || '');
@@ -188,6 +195,7 @@ export function AddAccountModal({
     setBusy(true);
     setErrors({});
     setErrorBanner(null);
+    setStatusMessage(null);
     try {
       const { account } = await createAccount({
         label,
@@ -206,7 +214,24 @@ export function AddAccountModal({
       });
 
       if (preset?.authMode === 'imap-smtp') {
-        await syncAccountMessages(account).catch(() => null);
+        try {
+          const syncRes = await syncAccountMessages(account);
+          onAdded(
+            account,
+            syncRes.syncedCount > 0
+              ? `Added ${account.label} (${account.email}) · imported ${syncRes.syncedCount} emails`
+              : `Added ${account.label} (${account.email})`
+          );
+          onClose();
+        } catch (syncErr: any) {
+          onAdded(account);
+          setErrorBanner(
+            `Account saved, but fetching emails failed: ${
+              syncErr?.message || 'Check your password and IMAP settings, then try again.'
+            }`
+          );
+        }
+        return;
       }
 
       onAdded(account, `Added ${account.label} (${account.email})`);

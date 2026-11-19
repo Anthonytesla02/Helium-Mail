@@ -235,11 +235,11 @@ export function SettingsAndRulesModal({
 
               <div className="p-4 rounded-2xl bg-[#FAF7F2] dark:bg-[#211D19] border border-[#E7E0D4] dark:border-[#332E28] space-y-2">
                 <label htmlFor="sync-server-url" className="block text-sm font-semibold">
-                  Sync Server URL (optional for mobile app)
+                  Sync Server URL (optional)
                 </label>
                 <p className="text-xs text-[#78716C] dark:text-[#9A9287]">
-                  Leave blank to store mailboxes locally on-device, or enter your hosted Helium Mail
-                  server URL for live IMAP/SMTP sync.
+                  Android connects directly to IMAP/SMTP servers on-device when blank. Optionally
+                  enter your own hosted Helium Mail server URL to route sync through it.
                 </p>
                 <div className="flex items-center gap-2 pt-1">
                   <input

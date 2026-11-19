@@ -33,6 +33,7 @@ import javax.mail.Transport;
 import javax.mail.UIDFolder;
 import javax.mail.internet.InternetAddress;
 import javax.mail.internet.MimeMessage;
+import javax.mail.internet.MimeUtility;
 
 @CapacitorPlugin(name = "NativeMail")
 public class NativeMailPlugin extends Plugin {
@@ -208,6 +209,7 @@ public class NativeMailPlugin extends Plugin {
         IO_EXECUTOR.execute(() -> {
             Store store = null;
             Transport transport = null;
+            String activeHost = imapHost;
             try {
                 Properties imapProps = buildImapProperties(imapHost, imapPort, imapSecure);
                 Session imapSession = Session.getInstance(imapProps);
@@ -217,6 +219,7 @@ public class NativeMailPlugin extends Plugin {
                 store.close();
                 store = null;
 
+                activeHost = smtpHost;
                 Properties smtpProps = buildSmtpProperties(smtpHost, smtpPort, smtpSecure);
                 Session smtpSession = Session.getInstance(smtpProps, new javax.mail.Authenticator() {
                     @Override
@@ -235,7 +238,7 @@ public class NativeMailPlugin extends Plugin {
                 result.put("message", "IMAP and SMTP connections verified directly from your device.");
                 call.resolve(result);
             } catch (Exception ex) {
-                call.reject(formatFriendlyError(ex, email, imapHost));
+                call.reject(formatFriendlyError(ex, email, activeHost));
             } finally {
                 if (store != null && store.isConnected()) {
                     try { store.close(); } catch (Exception ignored) {}
